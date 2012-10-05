@@ -60,18 +60,34 @@
 
     var drone = {
         keydown: function (e) {
+            console.log(e.keyCode);
             switch (e.keyCode) {
-                case 87:
+                case 87: // W
                     socket.emit("move", "forward");
                 break;
-                case 83:
+                case 83: // S
                     socket.emit("move", "backward");
                 break;
-                case 65:
+                case 65: // A
                     socket.emit("move", "left");
                 break;
-                case 68:
+                case 68: // D
                     socket.emit("move", "right");
+                break;
+                case 38: // arrow up
+                    socket.emit("move", "up");
+                break;
+                case 40: // arrow down
+                    socket.emit("move", "down");
+                break;
+                case 37: // arrow left
+                    socket.emit("rotate", "left");
+                break;
+                case 39: // arrow right
+                    socket.emit("rotate", "right");
+                break;
+                case 32: // spacebar
+                    socket.emit("drone", "takeoff/land");
                 break;
             }
         },
