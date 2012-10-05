@@ -1,4 +1,9 @@
 (function(global) {
+
+    var doc = global.document,
+        $ = doc.getElementById.bind(doc),
+        query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
+
     var VENDOR_PREFIX=(function () {
         var r = /^(Moz|Webkit|Khtml|O|ms|Icab)(?=[A-Z])/,
             s = document.getElementsByTagName('script')[0].style;
@@ -51,6 +56,37 @@
         console.log('received an image…');
         cam.src=src;
     });
+
+
+    var drone = {
+        keydown: function (e) {
+            switch (e.keyCode) {
+                case 87:
+                    socket.emit("move", "forward");
+                break;
+                case 83:
+                    socket.emit("move", "backward");
+                break;
+                case 65:
+                    socket.emit("move", "left");
+                break;
+                case 68:
+                    socket.emit("move", "right");
+                break;
+            }
+        },
+        mousemove: function (e) {
+            var movementX = e.webkitMovementX;
+            socket.emit("rotate", movementX);
+        }
+    };
+
+    $("mouselock").addEventListener("click", function () {
+        $("rotor").webkitRequestPointerLock();
+    }, false);
+
+    doc.addEventListener("keydown", drone.keydown, false);
+    doc.addEventListener("mousemove", drone.mousemove, false);
 
          /*
             "controlState":"CTRL_LANDED",
