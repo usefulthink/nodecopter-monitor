@@ -22,19 +22,24 @@ io.set('log level', 0);
 
 io.sockets.on('connection', function (socket) {
     console.log('socket.io connected');
-});
 
-io.sockets.on("move", function (direction) {
-  // client[direction]();
-  // todo: add speed
-});
-io.sockets.on("rotate", function (direction) {
-  // todo: add speed
-  // client[direction]();
-});
-io.sockets.on("drone", function (action) {
-  // takeoff/land
-  client[action]();
+    socket.on("move", function (direction) {
+        console.log('move', direction);
+        client[direction](0.3);
+        // todo: add speed
+    });
+
+    socket.on("rotate", function (direction) {
+        console.log('rotate', direction);
+        // todo: add speed
+        client[direction](0.3);
+    });
+
+    socket.on("drone", function (action) {
+        console.log('drone command: ', action);
+        // takeoff/land
+        client[action]();
+    });
 });
 
 srv.listen(app.get('port'), function(){
@@ -54,7 +59,6 @@ client.on('navdata', function(data) {
 
 var imageSendingPaused = false;
 pngstream.on("data", function (frame) {
-    console.log('got image', Date.now());
     currentImg = frame;
 
     if(imageSendingPaused) { return; }
