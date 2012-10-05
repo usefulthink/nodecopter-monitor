@@ -24,6 +24,19 @@ io.sockets.on('connection', function (socket) {
     console.log('socket.io connected');
 });
 
+io.sockets.on("move", function (direction) {
+  // client[direction]();
+  // todo: add speed
+});
+io.sockets.on("rotate", function (direction) {
+  // todo: add speed
+  // client[direction]();
+});
+io.sockets.on("drone", function (action) {
+  // takeoff/land
+  client[action]();
+});
+
 srv.listen(app.get('port'), function(){
   console.log("Express server listening on port " + app.get('port'));
 });
