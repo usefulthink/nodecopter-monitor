@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>three.js webgl - loaders - OBJ loader</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -12,33 +11,15 @@
             margin: 0px;
             overflow: hidden;
         }
-
-        #info {
-            color: #fff;
-            position: absolute;
-            top: 10px;
-            width: 100%;
-            text-align: center;
-            z-index: 100;
-            display: block;
-        }
-
-        #info a, .button {
-            color: #f00;
-            font-weight: bold;
-            text-decoration: underline;
-            cursor: pointer
-        }
     </style>
 </head>
 
 <body>
 
-<script src="js/three.js/build/three.min.js"></script>
+<script src="js/three.js/build/three.js"></script>
 <script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
 
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/three.js/examples/js/Detector.js"></script>
 <script src="js/three.js/examples/js/Stats.js"></script>
 
 <script>
@@ -52,33 +33,23 @@
 
     var container, stats;
 
-    var camera, scene, renderer;
-
-    var mouseX = 0, mouseY = 0;
-
-    var windowHalfX = window.innerWidth / 2;
-    var windowHalfY = window.innerHeight / 2;
-
+    var camera, object, scene, renderer;
 
     init();
     animate();
 
-    var object = null;
-
     function init() {
-
         container = document.createElement('div');
         document.body.appendChild(container);
 
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
         camera.position.z = 6000;
-        camera.position.y = -1000;
+        camera.position.y = 1000;
 
         // scene
-
         scene = new THREE.Scene();
 
-        var ambient = new THREE.AmbientLight(0x101030);
+        var ambient = new THREE.AmbientLight(0x404030);
         scene.add(ambient);
 
         var directionalLight = new THREE.DirectionalLight(0xffeedd);
@@ -97,48 +68,67 @@
             scene.add(object);
         });
 
-        loader.load('ardrone2.obj');
 
-        //
+
+        // GROUND
+
+        var imageCanvas = document.createElement( "canvas" ),
+            context = imageCanvas.getContext( "2d" );
+
+        imageCanvas.width = imageCanvas.height = 128;
+
+        context.fillStyle = "#aac";
+        context.fillRect( 0, 0, 128, 128 );
+
+        context.fillStyle = "#ccf";
+        context.fillRect( 0, 0, 64, 64);
+        context.fillRect( 64, 64, 64, 64 );
+
+        var textureCanvas = new THREE.Texture( imageCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
+            materialCanvas = new THREE.MeshBasicMaterial( { map: textureCanvas } );
+
+        textureCanvas.needsUpdate = true;
+        textureCanvas.repeat.set( 1000, 1000 );
+
+        var geometry = new THREE.PlaneGeometry( 100, 100 );
+
+        var floor = new THREE.Mesh( geometry, materialCanvas );
+        floor.rotation.x = - Math.PI / 2;
+        floor.scale.set( 10000, 10000, 10000 );
+        floor.position.y = -1000;
+
+        scene.add(floor);
+
+
+
+
+
+        // DRONE
+        loader.load('ardrone2.obj');
 
         renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
         container.appendChild(renderer.domElement);
 
-        document.addEventListener('mousemove', onDocumentMouseMove, false);
         window.addEventListener('resize', onWindowResize, false);
     }
 
     function onWindowResize() {
-
-        windowHalfX = window.innerWidth / 2;
-        windowHalfY = window.innerHeight / 2;
-
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
 
         renderer.setSize(window.innerWidth, window.innerHeight);
-
     }
-
-    function onDocumentMouseMove(event) {
-
-        mouseX = ( event.clientX - windowHalfX ) / 2;
-        mouseY = ( event.clientY - windowHalfY ) / 2;
-
-    }
-
-    //
 
     function animate() {
-
         requestAnimationFrame(animate);
         render();
-
     }
 
+
+    var RAD_PER_DEG = Math.PI/180;
     function deg2Rad(deg) {
-        return parseFloat(deg)*Math.PI/180;
+        return parseFloat(deg)*RAD_PER_DEG;
     }
 
     function render() {
@@ -146,9 +136,7 @@
             var x = lastNavdata.frontBackDegrees, y = lastNavdata.leftRightDegrees, z = lastNavdata.clockwiseDegrees,
                 xr = deg2Rad(x), yr = deg2Rad(y), zr = deg2Rad(z);
 
-
-            //console.log(x,y,z,xr,yr,zr);
-            object.rotation.set( xr, -zr, -yr);
+            object.rotation.set( -xr, -zr, -yr);
         }
 
         camera.lookAt(scene.position);
@@ -167,45 +155,27 @@
         $ = doc.getElementById.bind(doc),
         query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
 
-    var drone = {
-        keydown: function (e) {
-            e.preventDefault();
-            switch (e.keyCode) {
-                case 87: // W
-                    socket.emit("move", "front");
-                    break;
-                case 83: // S
-                    socket.emit("move", "back");
-                    break;
-                case 65: // A
-                    socket.emit("move", "left");
-                    break;
-                case 68: // D
-                    socket.emit("move", "right");
-                    break;
-                case 38: // arrow up
-                    socket.emit("move", "up");
-                    break;
-                case 40: // arrow down
-                    socket.emit("move", "down");
-                    break;
-                case 37: // arrow left
-                    socket.emit("rotate", "counterClockwise");
-                    break;
-                case 39: // arrow right
-                    socket.emit("rotate", "clockwise");
-                    break;
-                case 32: // spacebar
-                    socket.emit("drone", "takeoff");
-                    break;
-                case 27: // esc
-                    socket.emit("drone", "land");
-                    break;
-            }
-        }
+    var keymap = {
+        87 : { ev: 'move', param: 'front' }, // 'W'
+        83 : { ev: 'move', param: 'back' }, // 'S'
+        65 : { ev: 'move', param: 'left' }, // 'A'
+        68 : { ev: 'move', param: 'right' }, // 'D'
+        38 : { ev: 'move', param: 'up' }, // up
+        40 : { ev: 'move', param: 'down' }, // down
+        37 : { ev: 'rotate', param: 'counterClockwise' }, // left
+        39 : { ev: 'rotate', param: 'clockwise' }, // right
+        32 : { ev: 'drone', param: 'takeoff' }, // space
+        27 : { ev: 'drone', param: 'land' }  // esc
     };
 
-    doc.addEventListener("keydown", drone.keydown, false);
+    doc.addEventListener("keydown", function (ev) {
+        if(keymap[ev.keycode]) {
+            ev.preventDefault();
+
+            var evData = keymap[ev.keycode];
+            socket.emit(evData.ev, evData.param);
+        }
+    }, false);
 </script>
 
 </body>
