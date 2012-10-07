@@ -15,7 +15,6 @@
 </head>
 
 <body>
-
 <script src="js/three.js/build/three.js"></script>
 <script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
 
@@ -145,12 +144,6 @@
     }
 
 
-
-
-
-
-
-
     var doc = document,
         $ = doc.getElementById.bind(doc),
         query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
@@ -162,19 +155,35 @@
         68 : { ev: 'move', param: 'right' }, // 'D'
         38 : { ev: 'move', param: 'up' }, // up
         40 : { ev: 'move', param: 'down' }, // down
-        37 : { ev: 'rotate', param: 'counterClockwise' }, // left
-        39 : { ev: 'rotate', param: 'clockwise' }, // right
+        37 : { ev: 'move', param: 'counterClockwise' }, // left
+        39 : { ev: 'move', param: 'clockwise' }, // right
         32 : { ev: 'drone', param: 'takeoff' }, // space
-        27 : { ev: 'drone', param: 'land' }  // esc
+        27 : { ev: 'drone', param: 'land' },  // esc
+        49 : { ev: 'animate', param: 'flipAhead', duration: 15 }, // 1
+        50 : { ev: 'animate', param: 'flipLeft', duration: 15 }, // 2
+        51 : { ev: 'animate', param: 'yawShake', duration: 15 }, // 3
+        52 : { ev: 'animate', param: 'doublePhiThetaMixed', duration: 15 }, // 4
+        53 : { ev: 'animate', param: 'wave', duration: 15 } // 5
     };
 
-    doc.addEventListener("keydown", function (ev) {
-        if(keymap[ev.keycode]) {
-            ev.preventDefault();
+    var speed = 0;
 
-            var evData = keymap[ev.keycode];
-            socket.emit(evData.ev, evData.param);
+    doc.addEventListener("keydown", function (ev) {
+        if(!keymap[ev.keyCode]) {
+            return;
         }
+
+        ev.preventDefault();
+
+        speed = speed >= 1 ? 1 : speed + 0.02 / (1 - speed);
+        console.log(speed);
+
+        var evData = keymap[ev.keyCode];
+        socket.emit(evData.ev, { action: evData.param, speed: speed, duration: evData.duration });
+    }, false);
+
+    doc.addEventListener("keyup", function (ev) {
+        speed = 0;
     }, false);
 </script>
 

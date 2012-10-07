@@ -23,22 +23,19 @@ io.set('log level', 0);
 io.sockets.on('connection', function (socket) {
     console.log('socket.io connected');
 
-    socket.on("move", function (direction) {
-        console.log('move', direction);
-        client[direction](0.3);
-        // todo: add speed
+    socket.on("move", function (cmd) {
+        console.log('move', cmd.action);
+        client[cmd.action](cmd.speed);
     });
 
-    socket.on("rotate", function (direction) {
-        console.log('rotate', direction);
-        // todo: add speed
-        client[direction](0.3);
+    socket.on("animate", function (cmd) {
+        console.log('animate', cmd.action);
+        client[cmd.action](cmd.duration);
     });
 
-    socket.on("drone", function (action) {
-        console.log('drone command: ', action);
-        // takeoff/land
-        client[action]();
+    socket.on("drone", function (cmd) {
+        console.log('drone command: ', cmd.action);
+        client[cmd.action]();
     });
 });
 
