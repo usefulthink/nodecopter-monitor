@@ -11,10 +11,31 @@
             margin: 0px;
             overflow: hidden;
         }
+
+        #cam {
+            position: absolute;
+                top: 0; right: 0;
+            width: 400px;
+            height: auto;
+
+            opacity: 0.6;
+        }
+
+        #battery {
+            position: absolute;
+                top: 0; left: 0;
+
+            font-family: monospace;
+            font-size: 26px;
+        }
     </style>
 </head>
 
 <body>
+
+<!--<img id="cam" src="about:blank" />-->
+<div id="battery">Battery: <span id="batteryMeter">100</span>%</div>
+
 <script src="js/three.js/build/three.js"></script>
 <script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
 
@@ -22,13 +43,30 @@
 <script src="js/three.js/examples/js/Stats.js"></script>
 
 <script>
+    var doc = document,
+        $ = doc.getElementById.bind(doc),
+        query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
+
     var socket = io.connect('http://localhost:3001');
 
-    var lastNavdata = null;
+    var lastNavdata = null, lastBatteryPercentage = 100,
+        batteryMeter = $('batteryMeter');
+
     socket.on('navdata', function (data) {
         lastNavdata = data.demo;
-    });
 
+        if(data.demo.batteryPercentage !== lastBatteryPercentage) {
+            lastBatteryPercentage = data.demo.batteryPercentage;
+            batteryMeter.innerHTML = lastBatteryPercentage;
+        }
+    });
+/*
+    var camImg = doc.getElementById('cam');
+    socket.on('image', function(src) {
+        console.log('received an image…');
+        cam.src=src;
+    });
+*/
 
     var container, stats;
 
@@ -143,11 +181,6 @@
         renderer.render(scene, camera);
     }
 
-
-    var doc = document,
-        $ = doc.getElementById.bind(doc),
-        query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
-
     var keymap = {
         87 : { ev: 'move', param: 'front' }, // 'W'
         83 : { ev: 'move', param: 'back' }, // 'S'
@@ -186,6 +219,7 @@
         speed = 0;
         socket.emit('drone', { action: 'stop' });
     }, false);
+
 </script>
 
 </body>
