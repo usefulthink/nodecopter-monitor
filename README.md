@@ -15,4 +15,12 @@ into your project with
 
     require('nodecopter-monitor').init(client);
 
-after starting your program you can access the monitoring via `http://localhost:3001/webgl.html`
+after starting your program you can access the monitoring via `http://localhost:3001/webgl.html`.
+From the monitoring-page you can also remote-control the drone with the following key-commands:
+
+    space – takeoff
+    escape - land
+    W/S/A/D – move front/back/left/right
+    cursor-keys – up/down and rotate cw/ccw
+    1/2/3/4/5 – animations (flipAhead/flipLeft/yawShake/doublePhiThetaMixed/wave)
+ 
