@@ -1,1 +1,4 @@
-very (very) basic in-browser monitoring via websockets
+remote-control and monitoring for your nodecopter
+====
+
+note: the code is a complete mess and will eventually be reworked and documented.
