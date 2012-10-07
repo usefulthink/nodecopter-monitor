@@ -24,20 +24,28 @@ io.sockets.on('connection', function (socket) {
     console.log('socket.io connected');
 
     socket.on("move", function (cmd) {
-        console.log('move', cmd.action);
+        if(!client[cmd.action]) { return; }
+
+        console.log('move', cmd);
         client[cmd.action](cmd.speed);
     });
 
     socket.on("animate", function (cmd) {
-        console.log('animate', cmd.action);
+        if(!client[cmd.action]) { return; }
+
+        console.log('animate', cmd);
         client[cmd.action](cmd.duration);
     });
 
     socket.on("drone", function (cmd) {
-        console.log('drone command: ', cmd.action);
+        if(!client[cmd.action]) { return; }
+
+        console.log('drone command: ', cmd);
         client[cmd.action]();
     });
 });
+
+
 
 srv.listen(app.get('port'), function(){
   console.log("Express server listening on port " + app.get('port'));

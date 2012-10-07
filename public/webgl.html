@@ -175,7 +175,7 @@
 
         ev.preventDefault();
 
-        speed = speed >= 1 ? 1 : speed + 0.02 / (1 - speed);
+        speed = speed >= 1 ? 1 : speed + 0.08 / (1 - speed);
         console.log(speed);
 
         var evData = keymap[ev.keyCode];
@@ -184,6 +184,7 @@
 
     doc.addEventListener("keyup", function (ev) {
         speed = 0;
+        socket.emit('drone', { action: 'stop' });
     }, false);
 </script>
 
