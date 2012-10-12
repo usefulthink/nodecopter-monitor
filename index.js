@@ -1,4 +1,4 @@
-exports.init = function(client) {
+exports.init = function(drone) {
     var express = require('express'),
         http = require('http'),
         path = require('path');
@@ -7,7 +7,7 @@ exports.init = function(client) {
         srv = http.createServer(app),
         io = require('socket.io').listen(srv);
 
-    client.config('general:navdata_demo', 'TRUE');
+    drone.config('general:navdata_demo', 'TRUE');
 
     app.configure(function(){
       app.set('port', process.env.PORT || 3001);
@@ -21,25 +21,27 @@ exports.init = function(client) {
         console.log('socket.io connected');
 
         socket.on("move", function (cmd) {
-            if(!client[cmd.action]) { return; }
+            if(!drone[cmd.action]) { return; }
 
             console.log('move', cmd);
-            client[cmd.action](cmd.speed);
+            drone[cmd.action](cmd.speed);
         });
 
         socket.on("animate", function (cmd) {
-            if(!client[cmd.action]) { return; }
-
             console.log('animate', cmd);
-            client[cmd.action](cmd.duration);
+            drone.animate(cmd.action, cmd.duration);
         });
 
         socket.on("drone", function (cmd) {
-            if(!client[cmd.action]) { return; }
+            if(!drone[cmd.action]) { return; }
 
             console.log('drone command: ', cmd);
-            client[cmd.action]();
+            drone[cmd.action]();
         });
+    });
+
+    drone.on('navdata', function(data) {
+        io.sockets.emit('navdata', data);
     });
 
     srv.listen(app.get('port'), function(){
@@ -47,13 +49,9 @@ exports.init = function(client) {
     });
 
     var fs = require("fs"),
-        pngstream = client.createPngStream(),
+        pngstream = drone.createPngStream(),
         currentImg,
         i = 0;
-
-    client.on('navdata', function(data) {
-        io.sockets.emit('navdata', data);
-    });
 
     var imageSendingPaused = false;
     pngstream.on("data", function (frame) {

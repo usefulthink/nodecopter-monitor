@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
+        * { margin: 0; padding: 0; }
         body {
             font-family: Monospace;
             background-color: #000;
@@ -18,7 +19,7 @@
             width: 400px;
             height: auto;
 
-            opacity: 0.6;
+            opacity: 0.9;
         }
 
         #battery {
@@ -28,14 +29,26 @@
             font-family: monospace;
             font-size: 26px;
         }
+
+        #stateData {
+            color: white;
+            font-size: 10px;
+            font-family: monospace;
+            position: absolute;
+                bottom: 0; right: 0;
+
+            width: 300px; height: 200px;
+
+            background: rgba(0,0,0,0.5);
+        }
     </style>
 </head>
 
 <body>
 
-<!--<img id="cam" src="about:blank" />-->
+<img id="cam" src="about:blank" />
 <div id="battery">Battery: <span id="batteryMeter">100</span>%</div>
-
+<pre id="stateData"></pre>
 <script src="js/three.js/build/three.js"></script>
 <script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
 
@@ -52,8 +65,18 @@
     var lastNavdata = null, lastBatteryPercentage = 100,
         batteryMeter = $('batteryMeter');
 
+    var loggingPaused = false,
+            stateData = $('stateData');
+
     socket.on('navdata', function (data) {
         lastNavdata = data.demo;
+
+        if(!loggingPaused) {
+            //console.log(data);
+            stateData.innerHTML = JSON.stringify(data.demo, null, 2);
+            loggingPaused = true;
+            setTimeout(function() { loggingPaused=false; }, 100);
+        }
 
         if(data.demo.batteryPercentage !== lastBatteryPercentage) {
             lastBatteryPercentage = data.demo.batteryPercentage;
@@ -108,32 +131,29 @@
 
 
         // GROUND
-
         var imageCanvas = document.createElement( "canvas" ),
             context = imageCanvas.getContext( "2d" );
 
-        imageCanvas.width = imageCanvas.height = 128;
-
+        imageCanvas.width = imageCanvas.height = 512;
         context.fillStyle = "#aac";
-        context.fillRect( 0, 0, 128, 128 );
-
+        context.fillRect( 0, 0, 512, 512 );
         context.fillStyle = "#ccf";
-        context.fillRect( 0, 0, 64, 64);
-        context.fillRect( 64, 64, 64, 64 );
 
+        context.fillRect( 0, 0, 256, 256);
+        context.fillRect( 256, 256, 256, 256);
         var textureCanvas = new THREE.Texture( imageCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
             materialCanvas = new THREE.MeshBasicMaterial( { map: textureCanvas } );
 
         textureCanvas.needsUpdate = true;
-        textureCanvas.repeat.set( 1000, 1000 );
 
+        textureCanvas.repeat.set( 10000, 10000 );
         var geometry = new THREE.PlaneGeometry( 100, 100 );
 
         var floor = new THREE.Mesh( geometry, materialCanvas );
+
         floor.rotation.x = - Math.PI / 2;
         floor.scale.set( 10000, 10000, 10000 );
-        floor.position.y = -1000;
-
+        floor.position.y = 200 ;
         scene.add(floor);
 
 
@@ -173,7 +193,10 @@
             var x = lastNavdata.frontBackDegrees, y = lastNavdata.leftRightDegrees, z = lastNavdata.clockwiseDegrees,
                 xr = deg2Rad(x), yr = deg2Rad(y), zr = deg2Rad(z);
 
-            object.rotation.set( -xr, -zr, -yr);
+                // height:
+                //object.position.y = lastNavdata.altitude * 1000; // some scaling
+            drone.rotation.set( xr, 0, -yr);
+            floor.rotation.z = zr;
         }
 
         camera.lookAt(scene.position);
@@ -200,9 +223,9 @@
     };
 
     var speed = 0;
-
     doc.addEventListener("keydown", function (ev) {
         if(!keymap[ev.keyCode]) {
+            console.log('unmapped keycode', ev.keycode);
             return;
         }
 
