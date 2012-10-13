@@ -30,7 +30,7 @@
             font-size: 26px;
         }
 
-        #stateData {
+        #droneStateData, #gamepadStateData {
             color: white;
             font-size: 10px;
             font-family: monospace;
@@ -41,135 +41,141 @@
 
             background: rgba(0,0,0,0.5);
         }
+
+        #gamepadStateData { left: 0; }
     </style>
 </head>
 
 <body>
-
-<img id="cam" src="about:blank" />
+<!-- 1px transparent gif… -->
+<img id="cam" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" />
 <div id="battery">Battery: <span id="batteryMeter">100</span>%</div>
-<pre id="stateData"></pre>
+<pre id="droneStateData"></pre>
+<pre id="gamepadStateData"></pre>
+
+
 <script src="js/three.js/build/three.js"></script>
 <script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
-
 <script src="/socket.io/socket.io.js"></script>
-<script src="js/three.js/examples/js/Stats.js"></script>
 
 <script>
-    var doc = document,
-        $ = doc.getElementById.bind(doc),
-        query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
+    var $ = document.getElementById.bind(document);
+
+    var batteryMeterEl = $('batteryMeter'),
+        droneStateEl = $('droneStateData'),
+        gamepadStateEl = $('gamepadStateData'),
+        containerEl;
+
+
+    var navData = null, droneState = null,
+        lastBatteryPercentage = 100,
+        loggingPaused = false;
 
     var socket = io.connect('http://localhost:3001');
 
-    var lastNavdata = null, lastBatteryPercentage = 100,
-        batteryMeter = $('batteryMeter');
-
-    var loggingPaused = false,
-            stateData = $('stateData');
-
+    // these events might fire really rapidly, so we won't do much in the handler…
     socket.on('navdata', function (data) {
-        lastNavdata = data.demo;
-
-        if(!loggingPaused) {
-            //console.log(data);
-            stateData.innerHTML = JSON.stringify(data.demo, null, 2);
-            loggingPaused = true;
-            setTimeout(function() { loggingPaused=false; }, 100);
-        }
-
-        if(data.demo.batteryPercentage !== lastBatteryPercentage) {
-            lastBatteryPercentage = data.demo.batteryPercentage;
-            batteryMeter.innerHTML = lastBatteryPercentage;
-        }
+        droneState = data.droneState;
+        navData = data.demo;
     });
-/*
-    var camImg = doc.getElementById('cam');
-    socket.on('image', function(src) {
-        console.log('received an image…');
-        cam.src=src;
-    });
-*/
 
-    var container, stats;
 
-    var camera, object, scene, renderer;
+
+    // ---- three.js setup
+    var camera, floor, droneObject, scene, renderer;
 
     init();
     animate();
 
     function init() {
-        container = document.createElement('div');
-        document.body.appendChild(container);
+        containerEl = document.createElement('div');
+        document.body.appendChild(containerEl);
 
         camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
         camera.position.z = 6000;
-        camera.position.y = 1000;
+        camera.position.y = 1500;
 
         // scene
         scene = new THREE.Scene();
 
-        var ambient = new THREE.AmbientLight(0x404030);
-        scene.add(ambient);
+        initLighting(scene);
+        initModels(scene);
 
-        var directionalLight = new THREE.DirectionalLight(0xffeedd);
-        directionalLight.position.set(0, 0, 1).normalize();
-        scene.add(directionalLight);
-
-        // model
-        var loader = new THREE.OBJLoader();
-        loader.addEventListener('load', function (event) {
-            object = event.content;
-
-            console.log(object);
-
-            object.position.y = 0;
-            object.scale.set(0.01,0.01,0.01);
-            scene.add(object);
-        });
-
-
-
-        // GROUND
-        var imageCanvas = document.createElement( "canvas" ),
-            context = imageCanvas.getContext( "2d" );
-
-        imageCanvas.width = imageCanvas.height = 512;
-        context.fillStyle = "#aac";
-        context.fillRect( 0, 0, 512, 512 );
-        context.fillStyle = "#ccf";
-
-        context.fillRect( 0, 0, 256, 256);
-        context.fillRect( 256, 256, 256, 256);
-        var textureCanvas = new THREE.Texture( imageCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
-            materialCanvas = new THREE.MeshBasicMaterial( { map: textureCanvas } );
-
-        textureCanvas.needsUpdate = true;
-
-        textureCanvas.repeat.set( 10000, 10000 );
-        var geometry = new THREE.PlaneGeometry( 100, 100 );
-
-        var floor = new THREE.Mesh( geometry, materialCanvas );
-
-        floor.rotation.x = - Math.PI / 2;
-        floor.scale.set( 10000, 10000, 10000 );
-        floor.position.y = 200 ;
-        scene.add(floor);
-
-
-
-
-
-        // DRONE
-        loader.load('ardrone2.obj');
-
+        // main init
         renderer = new THREE.WebGLRenderer();
         renderer.setSize(window.innerWidth, window.innerHeight);
-        container.appendChild(renderer.domElement);
+        renderer.shadowMapEnabled = true;
+
+        containerEl.appendChild(renderer.domElement);
 
         window.addEventListener('resize', onWindowResize, false);
     }
 
+    function initLighting(scene) {
+        var ambient = new THREE.AmbientLight(0x404030);
+        scene.add(ambient);
+
+        var directionalLight = new THREE.DirectionalLight(0xffeedd);
+        directionalLight.position.set(0, 1000, 1000);
+        directionalLight.castShadow = true;
+        scene.add(directionalLight);
+    }
+
+    function initModels(scene) {
+        initFloorModel(scene);
+        initDroneModel(scene);
+    }
+
+    function initFloorModel(scene) {
+        var floorTileCanvas = document.createElement("canvas"),
+            context = floorTileCanvas.getContext("2d");
+
+        floorTileCanvas.width = floorTileCanvas.height = 512;
+        context.fillStyle = "#aac";
+        context.fillRect(0, 0, 512, 512);
+        context.fillStyle = "#ccf";
+
+        context.fillRect(0, 0, 256, 256);
+        context.fillRect(256, 256, 256, 256);
+
+        var floorTexture = new THREE.Texture(floorTileCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
+            floorMaterial = new THREE.MeshLambertMaterial({ map:floorTexture });
+
+        floorTexture.needsUpdate = true;
+        floorTexture.repeat.set(5000, 5000);
+
+        var geometry = new THREE.PlaneGeometry(100, 100);
+
+        floor = new THREE.Mesh(geometry, floorMaterial);
+
+        floor.rotation.x = -Math.PI / 2;
+        floor.scale.set(10000, 10000, 10000);
+        floor.position.y = 0;
+        floor.receiveShadow = true;
+
+        scene.add(floor);
+    }
+
+    function initDroneModel(scene) {
+        var loader = new THREE.OBJLoader();
+        loader.addEventListener('load', function (event) {
+            droneObject = event.content;
+
+            droneObject.position.y = 1000;
+            droneObject.scale.set(0.01, 0.01, 0.01);
+
+            droneObject.castShadow = true;
+            droneObject.receiveShadow = true;
+
+            console.log(droneObject);
+            scene.add(droneObject);
+        });
+
+        loader.load('ardrone2.obj');
+    }
+
+
+    // update camera and viewport on resize
     function onWindowResize() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
@@ -179,31 +185,44 @@
 
     function animate() {
         requestAnimationFrame(animate);
-        render();
+
+        renderScene();
+        updateStateDisplays();
     }
 
+    var deg2Rad = (function() {
+        var RAD_PER_DEG = Math.PI/180;
 
-    var RAD_PER_DEG = Math.PI/180;
-    function deg2Rad(deg) {
-        return parseFloat(deg)*RAD_PER_DEG;
-    }
+        return function(deg) { return deg * RAD_PER_DEG; }
+    } ());
 
-    function render() {
-        if(lastNavdata) {
-            var x = lastNavdata.frontBackDegrees, y = lastNavdata.leftRightDegrees, z = lastNavdata.clockwiseDegrees,
-                xr = deg2Rad(x), yr = deg2Rad(y), zr = deg2Rad(z);
+    function renderScene() {
+        if(navData) {
+            var xr = deg2Rad(navData.frontBackDegrees),
+                yr = deg2Rad(navData.clockwiseDegrees),
+                zr = deg2Rad(navData.leftRightDegrees);
 
-                // height:
-                //object.position.y = lastNavdata.altitude * 1000; // some scaling
-            drone.rotation.set( xr, 0, -yr);
-            floor.rotation.z = zr;
+            droneObject.rotation.set( xr, -yr, -zr);
         }
 
         camera.lookAt(scene.position);
-
         renderer.render(scene, camera);
     }
 
+    function updateStateDisplays() {
+        if(!navData) { return; }
+        droneStateEl.innerHTML = JSON.stringify(navData, null, 2);
+
+        if (navData.batteryPercentage !== lastBatteryPercentage) {
+            lastBatteryPercentage = navData.batteryPercentage;
+            batteryMeterEl.innerHTML = lastBatteryPercentage;
+        }
+    }
+
+
+
+
+    // ---- keyboard controls – kinda broken
     var keymap = {
         87 : { ev: 'move', param: 'front' }, // 'W'
         83 : { ev: 'move', param: 'back' }, // 'S'
@@ -223,27 +242,174 @@
     };
 
     var speed = 0;
-    doc.addEventListener("keydown", function (ev) {
+    document.addEventListener("keydown", function (ev) {
         if(!keymap[ev.keyCode]) {
-            console.log('unmapped keycode', ev.keycode);
+            //console.error('unmapped keycode', ev.keycode);
             return;
         }
 
         ev.preventDefault();
 
         speed = speed >= 1 ? 1 : speed + 0.08 / (1 - speed);
-        console.log(speed);
 
         var evData = keymap[ev.keyCode];
+        //console.log('event', evData);
         socket.emit(evData.ev, { action: evData.param, speed: speed, duration: evData.duration });
     }, false);
 
-    doc.addEventListener("keyup", function (ev) {
+    document.addEventListener("keyup", function (ev) {
         speed = 0;
-        socket.emit('drone', { action: 'stop' });
+        socket.emit('droneObject', { action: 'stop' });
     }, false);
 
-</script>
 
+    // ---- gamepad integration
+    var BTN = {
+        // Face (main) buttons
+        FACE_1: 0, FACE_2: 1, FACE_3: 2, FACE_4: 3,
+        // Top/bottom shoulder buttons
+        LEFT_SHOULDER: 4, RIGHT_SHOULDER: 5,
+        LEFT_SHOULDER_BOTTOM: 6, RIGHT_SHOULDER_BOTTOM: 7,
+        SELECT: 8, START: 9,
+        // Analogue stick-buttons (if depressible)
+        LEFT_ANALOGUE_STICK: 10,
+        RIGHT_ANALOGUE_STICK: 11,
+        // Directional (discrete) pad
+        PAD_TOP: 12, PAD_BOTTOM: 13, PAD_LEFT: 14, PAD_RIGHT: 15
+    };
+
+    var AXES = {
+        LEFT_ANALOGUE_HOR: 0, LEFT_ANALOGUE_VERT: 1,
+        RIGHT_ANALOGUE_HOR: 2, RIGHT_ANALOGUE_VERT: 3
+    };
+
+    // might be incomplete…
+    var FLY_STATES = { FLYING_OK : 1 },
+        CTRL_STATES = {
+            CTRL_DEFAULT: 0,
+            CTRL_TRANS_TAKEOFF: 1,
+            CTRL_HOVERING: 2,
+            CTRL_FLYING: 3,
+            CTRL_TRANS_LANDING: 4,
+            CTRL_LANDED: 5
+        };
+
+    gamepadStateEl.innerHTML = 'not connected';
+
+    // initialize
+    var lastGamepadState = {
+        horiz: 0, vert: 0,
+        btnStart: 0, btnStop: 0,
+        btnTurnCW: 0, btnTurnCCW: 0,
+        btnUp: 0, btnDown: 0
+    };
+
+    (function __controlLoop() {
+        requestAnimationFrame(__controlLoop);
+
+        // will only work in newer versions of chrome, no polyfill needed here…
+        var gamepad = navigator.webkitGetGamepads()[0];
+
+        if(!gamepad) { return; }
+
+        // this is for better readability only and might be inlined.
+        // I suspect the js-engine will likely do it anyway.
+        var gamepadState = {
+            // toFixed(1) to prevent too many useless nav-packets
+            horiz: gamepad.axes[AXES.LEFT_ANALOGUE_HOR].toFixed(1),
+            vert: gamepad.axes[AXES.LEFT_ANALOGUE_VERT].toFixed(1),
+
+            btnStart: (1==gamepad.buttons[BTN.START]),
+            btnStop: (1==gamepad.buttons[BTN.SELECT]),
+            btnTurnCW: (1==gamepad.buttons[BTN.RIGHT_SHOULDER]),
+            btnTurnCCW: (1==gamepad.buttons[BTN.LEFT_SHOULDER]),
+            btnDown: (1==gamepad.buttons[BTN.FACE_1]),
+            btnUp: (1==gamepad.buttons[BTN.FACE_4]),
+
+            btnFlipFwd: (1==gamepad.buttons[BTN.PAD_TOP]),
+            btnFlipBwd: (1==gamepad.buttons[BTN.PAD_BOTTOM]),
+            btnFlipLeft: (1==gamepad.buttons[BTN.PAD_LEFT]),
+            btnFlipRight: (1==gamepad.buttons[BTN.PAD_RIGHT])
+        }
+
+        // ---- logging
+        gamepadStateEl.innerHTML = JSON.stringify(gamepadState, null, 2);
+
+        // ---- analogue-stick left/right
+        var horiz=gamepadState.horiz;
+        if(horiz != lastGamepadState.horiz) { // negative: left
+            if(horiz<0) {
+                socket.emit('move', { action: 'left', speed: -horiz });
+            } else if(horiz>0) {
+                socket.emit('move', { action: 'right', speed: horiz });
+            } else { // == 0
+                socket.emit('move', { action: 'left', speed: 0 });
+                socket.emit('move', { action: 'right', speed: 0 });
+            }
+        }
+
+        // ---- analogue-stick up/down
+        var vert=gamepadState.vert;
+        if(vert != lastGamepadState.vert) { // negative: up
+            if(vert<0) {
+                socket.emit('move', { action: 'front', speed: -vert });
+            } else if(vert>0) {
+                socket.emit('move', { action: 'back', speed: vert });
+            } else { // == 0
+                socket.emit('move', { action: 'front', speed: 0 });
+                socket.emit('move', { action: 'back', speed: 0 });
+            }
+        }
+
+        // ---- takeoff/land
+        if(gamepadState.btnStart && !lastGamepadState.btnStart) {
+            if(!droneState.flying) {
+                socket.emit('drone', { action: 'takeoff' });
+            } else {
+                socket.emit('drone', { action: 'land' });
+            }
+        }
+
+        // ---- stop-button
+        if(gamepadState.btnStop && !lastGamepadState.btnStop) {
+            socket.emit('drone', { action: 'stop' });
+        }
+
+        // ---- up/down/cw/ccw buttons (TODO: add accelleration for more fine-grained control)
+        var evMap = {
+            btnUp: { ev: 'move', action: 'up', mode: 'toggleSpeed' },
+            btnDown: { ev: 'move', action: 'down', mode: 'toggleSpeed' },
+            btnTurnCW: { ev: 'move', action: 'clockwise', mode: 'toggleSpeed' },
+            btnTurnCCW: { ev: 'move', action: 'counterClockwise', mode: 'toggleSpeed' },
+
+            btnFlipFwd: { ev: 'animate', action: 'flipAhead', mode: 'trigger' },
+            btnFlipBwd: { ev: 'animate', action: 'flipBehind', mode: 'trigger' },
+            btnFlipLeft: { ev: 'animate', action: 'flipLeft', mode: 'trigger' },
+            btnFlipRight: { ev: 'animate', action: 'flipRight', mode: 'trigger' }
+        };
+
+        Object.keys(evMap).forEach(function(btnId) {
+            var evData = evMap[btnId],
+                curr = gamepadState[btnId],
+                last = lastGamepadState[btnId];
+
+            if('toggleSpeed' == evData.mode) {
+                if(curr && !last) { // btnPress
+                    socket.emit(evData.ev, { action: evData.action, speed: 1 });
+                } else if(!curr && last) { // btnRelease
+                    socket.emit(evData.ev, { action: evData.action, speed: 0 });
+                }
+            } else if('trigger' == evData.mode) {
+                if(curr && !last) {
+                    socket.emit(evData.ev, { action: evData.action, duration: 15 });
+                }
+            }
+        });
+
+
+        lastGamepadState = gamepadState;
+    } ());
+
+</script>
 </body>
 </html>
