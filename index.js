@@ -57,12 +57,12 @@ exports.init = function(drone) {
     pngstream.on("data", function (frame) {
         currentImg = frame;
 
-        if(imageSendingPaused) { return; }
+        //if(imageSendingPaused) { return; }
 
         io.sockets.emit("image", "/image/" + i++);
 
-        imageSendingPaused = true;
-        setTimeout(function() {imageSendingPaused = false; }, 100);
+        //imageSendingPaused = true;
+        //setTimeout(function() { imageSendingPaused = false; }, 100); // limit to 10fps
     });
 
     app.get('/image/:id', function (req, res) {
