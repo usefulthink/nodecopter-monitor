@@ -4,12 +4,20 @@
   "version": "0.1.0",
   "dependencies": {
     "express": "~3.0.0",
-    "ar-drone": "*"
+    "ar-drone": "*",
+    "socket.io": "~0.9.10"
   },
-  "author": { "name" : "usefulthink", "email": "m.schuhfuss@gmail.com" },
+  "author": {
+    "name": "usefulthink",
+    "email": "m.schuhfuss@gmail.com"
+  },
   "contributors": [
-    { "name": "zaubernerd" },
-    { "name": "line-o" }
+    {
+      "name": "zaubernerd"
+    },
+    {
+      "name": "line-o"
+    }
   ],
   "main": "index.js",
   "repository": "https://github.com/usefulthink/nodecopter-monitor.git",
