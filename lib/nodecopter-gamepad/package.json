@@ -1,0 +1,14 @@
+{
+    "name": "nodecopter-gamepad",
+    "description": "ar-drone-control via GamepadAPI from the browser",
+    "version": "0.0.1",
+    "dependencies": {},
+    "author": {
+        "name": "usefulthink",
+        "email": "m.schuhfuss@gmail.com"
+    },
+    "main": "index.js",
+    "repository": "https://github.com/usefulthink/nodecopter-gamepad.git",
+    "homepage": "https://github.com/usefulthink/nodecopter-gamepad",
+    "license": "MIT"
+}
