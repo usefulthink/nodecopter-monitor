@@ -49,23 +49,246 @@
 <body>
 <!-- 1px transparent gif… -->
 <img id="camImage" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==" />
-<div id="battery">Battery: <span id="batteryMeter">100</span>%</div>
+<div id="battery">Battery: <span id="batteryMeter">NA</span>%</div>
 <pre id="droneStateData"></pre>
 <pre id="gamepadStateData"></pre>
+<div id="nodecopter-webgl"></div>
 
 
 <script src="js/three.js/build/three.js"></script>
-<script src="js/three.js/examples/js/loaders/OBJLoader.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 
 <script>
+    var nodecopterWebGL = (function (win) {
+
+        var doc = win.document,
+            get = doc.getElementById.bind(doc),
+            query = function query(query, scope) { return (scope || doc).querySelectorAll(query); },
+            nodecopter = {
+                /**
+                 * Expose these objects for debugging purposes
+                 * (to easily change positions, rotations, etc).
+                 */
+                camera: null,
+                scene: null,
+                renderer: null,
+                floor: null,
+                drone: null,
+                ambientLight: null,
+                spotLight: null,
+                directionalLight: null,
+
+                droneModelURL: "",
+                navData: null,
+
+                /**
+                 * Helper function to convert angle degrees to radians.
+                 * @function
+                 * @param  {number} The angle in degrees.
+                 * @return {number} The angle in radians.
+                 */
+                deg2Rad: (function () {
+                    var RAD_PER_DEG = Math.PI / 180;
+                    return function (deg) { return deg * RAD_PER_DEG; };
+                }()),
+
+                /**
+                 * Initializes the WebGL scene. If called without width and height
+                 * the window.innerWidth and window.innerHeight are taken and
+                 * an event handler for resize events gets attached to reset the
+                 * camera aspect and renderer size.
+                 * @param {DOMNode}  container                   The DOM node to attach the canvas to.
+                 * @param {number}   [width=window.innerWidth]   Optional: the width of the webGL canvas.
+                 * @param {number}   [height=window.innerHeight] Optional: the height of the webGL canvas.
+                 * @param {function} [callback]                  Optional: A callback to be called once everything is initialized.
+                 */
+                init: function (container, width, height, callback) {
+                    // If only two arguments were provided and width is a function,
+                    // use it as the callback and set width to undefined.
+                    if (typeof width === "function") {
+                        callback = width;
+                        width = undefined;
+                    }
+                    // Set the width and height, if no width and height were specified
+                    // take the window dimensions and register a resize event handler.
+                    this.width = width || win.innerWidth;
+                    this.height = height || win.innerHeight;
+                    if (!width && !height) {
+                        win.addEventListener("resize", this.setSize.bind(this), false);
+                    }
+
+                    // Initialize everything.
+                    this.scene = this.initThreeJS(container);
+                    this.initFloorModel(this.scene);
+                    this.initLightning(this.scene);
+                    // Start rendering the scene once the drone model is loaded and call the
+                    // user provided callback (if any) in the context of nodecopterWebGL.
+                    this.initDroneModel(this.scene, function () {
+                        this.render();
+                        if (typeof callback === "function") {
+                            callback.call(this);
+                        }
+                    }.bind(this));
+                },
+
+                /**
+                 * Resets the camera aspect ratio and the renderer size.
+                 * To be called whenever the display size changes.
+                 * @param {number} width  The new display width.
+                 * @param {number} height The new display height.
+                 */
+                setSize: function (width, height) {
+                    this.width = typeof width === "number" ? width : win.innerWidth;
+                    this.height = typeof height === "number" ? width : win.innerHeight;
+
+                    this.camera.aspect = this.width / this.height;
+                    this.camera.updateProjectionMatrix();
+
+                    this.renderer.setSize(this.width, this.height);
+                },
+
+                /**
+                 * Sets the demo navdata from the drone so the webGL drone can move.
+                 * @param {object} navData The navdata.demo data from the drone.
+                 */
+                setNavData: function (navData) {
+                    this.navData = navData;
+                },
+
+                /**
+                 * Initializes the camera, renderer and scene and attaches
+                 * the canvas to the provided DOM node.
+                 * @return {object} Returns the THREE.js scene object.
+                 */
+                initThreeJS: function (container) {
+                    this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 8000);
+                    this.camera.position.set(0, 100, 400);
+
+                    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+                    this.renderer.setSize(this.width, this.height);
+                    this.renderer.shadowMapEnabled = true;
+                    container.appendChild(this.renderer.domElement);
+
+                    return new THREE.Scene();
+                },
+
+                /**
+                 * Initializes the floor model.
+                 * @param  {object} scene The THREE.js scene object.
+                 */
+                initFloorModel: function (scene) {
+                    // var planeGeo = new THREE.PlaneGeometry(1200, 2000, 1, 1);
+                    // var planeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+                    // this.floor = new THREE.Mesh(planeGeo, planeMat);
+                    // this.floor.rotation.x = -Math.PI/2;
+                    // this.floor.receiveShadow = true;
+                    // scene.add(this.floor);
+
+                    var floorTileCanvas = document.createElement("canvas"),
+                        context = floorTileCanvas.getContext("2d");
+
+                    floorTileCanvas.width = floorTileCanvas.height = 512;
+                    context.fillStyle = "#aac";
+                    context.fillRect(0, 0, 512, 512);
+                    context.fillStyle = "#ccf";
+
+                    context.fillRect(0, 0, 256, 256);
+                    context.fillRect(256, 256, 256, 256);
+
+                    var floorTexture = new THREE.Texture(floorTileCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
+                        floorMaterial = new THREE.MeshLambertMaterial({ map:floorTexture });
+
+                    floorTexture.needsUpdate = true;
+                    floorTexture.repeat.set(5000, 5000);
+
+                    var geometry = new THREE.PlaneGeometry(100, 100);
+
+                    this.floor = new THREE.Mesh(geometry, floorMaterial);
+
+                    this.floor.rotation.x = -Math.PI / 2;
+                    this.floor.scale.set(10000, 10000, 10000);
+                    this.floor.receiveShadow = true;
+
+                    scene.add(this.floor);
+                },
+
+                /**
+                 * Loads and initializes the drone model.
+                 * @param  {object}   scene    The THREE.js scene object.
+                 * @param  {function} callback A callback function to be called when the model is loaded.
+                 */
+                initDroneModel: function (scene, callback) {
+                    new THREE.JSONLoader().load(this.droneModelURL, function (geometry) {
+                        var material = new THREE.MeshFaceMaterial();
+                        this.drone = new THREE.Mesh(geometry, material);
+                        this.drone.scale.set(0.8, 0.8, 0.8);
+                        this.drone.castShadow = true;
+                        scene.add(this.drone);
+
+                        callback();
+                    }.bind(this));
+                },
+
+                /**
+                 * Initializes three different lights.
+                 * @param  {object} scene The THREE.js scene object.
+                 */
+                initLightning: function (scene) {
+                    this.ambientLight = new THREE.AmbientLight(0x404030);
+                    scene.add(this.ambientLight);
+
+                    this.spotLight = new THREE.SpotLight(0xffeedd);
+                    this.spotLight.position.set(0, 1000, 0);
+                    this.spotLight.castShadow = true;
+                    this.spotLight.shadowDarkness = 0.7;
+                    // this.spotLight.shadowCameraVisible = true;
+                    scene.add(this.spotLight);
+
+                    this.directionalLight = new THREE.DirectionalLight(0xffeedd);
+                    this.directionalLight.position.set(0, 1000, 1000);
+                    // this.directionalLight.castShadow = true; // Works only with orthographic camera.
+                    scene.add(this.directionalLight);
+                },
+
+                /**
+                 * Renders the scene and calls itself via requestAnimationFrame.
+                 */
+                render: function () {
+                    requestAnimationFrame(this.render.bind(this));
+
+                    if (this.navData) {
+                        var xr = this.deg2Rad(this.navData.frontBackDegrees),
+                            yr = this.deg2Rad(this.navData.clockwiseDegrees),
+                            zr = this.deg2Rad(this.navData.leftRightDegrees);
+                        this.drone.rotation.set(xr, -yr, -zr);
+                        this.drone.position.y = this.navData.altitudeMeters * 10;
+                    }
+
+                    if (typeof this.onRender === "function") {
+                        this.onRender.call(this);
+                    }
+
+                    this.camera.lookAt(this.drone.position);
+                    this.renderer.render(this.scene, this.camera);
+                }
+
+            };
+
+
+        return nodecopter;
+    }(window));
+
+
+
+
+
     var $ = document.getElementById.bind(document);
 
     var batteryMeterEl = $('batteryMeter'),
         droneStateEl = $('droneStateData'),
         gamepadStateEl = $('gamepadStateData'),
         imgEl = $('camImage'),
-        containerEl;
+        containerEl = $('nodecopter-webgl');
 
 
     var navData = null, droneState = null,
@@ -78,139 +301,20 @@
     socket.on('navdata', function (data) {
         droneState = data.droneState;
         navData = data.demo;
+        nodecopterWebGL.setNavData(navData);
     });
 
     socket.on('image', function(src) { imgEl.src = src; });
 
-    // ---- three.js setup
-    var camera, floor, droneObject, scene, renderer;
-
-    init();
-    animate();
-
-    function init() {
-        containerEl = document.createElement('div');
-        document.body.appendChild(containerEl);
-
-        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 8000);
-        camera.position.z = 6000;
-        camera.position.y = 1500;
-
-        // scene
-        scene = new THREE.Scene();
-
-        initLighting(scene);
-        initModels(scene);
-
-        // main init
-        renderer = new THREE.WebGLRenderer();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.shadowMapEnabled = true;
-
-        containerEl.appendChild(renderer.domElement);
-
-        window.addEventListener('resize', onWindowResize, false);
-    }
-
-    function initLighting(scene) {
-        var ambient = new THREE.AmbientLight(0x404030);
-        scene.add(ambient);
-
-        var directionalLight = new THREE.DirectionalLight(0xffeedd);
-        directionalLight.position.set(0, 1000, 1000);
-        directionalLight.castShadow = true;
-        scene.add(directionalLight);
-    }
-
-    function initModels(scene) {
-        initFloorModel(scene);
-        initDroneModel(scene);
-    }
-
-    function initFloorModel(scene) {
-        var floorTileCanvas = document.createElement("canvas"),
-            context = floorTileCanvas.getContext("2d");
-
-        floorTileCanvas.width = floorTileCanvas.height = 512;
-        context.fillStyle = "#aac";
-        context.fillRect(0, 0, 512, 512);
-        context.fillStyle = "#ccf";
-
-        context.fillRect(0, 0, 256, 256);
-        context.fillRect(256, 256, 256, 256);
-
-        var floorTexture = new THREE.Texture(floorTileCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
-            floorMaterial = new THREE.MeshLambertMaterial({ map:floorTexture });
-
-        floorTexture.needsUpdate = true;
-        floorTexture.repeat.set(5000, 5000);
-
-        var geometry = new THREE.PlaneGeometry(100, 100);
-
-        floor = new THREE.Mesh(geometry, floorMaterial);
-
-        floor.rotation.x = -Math.PI / 2;
-        floor.scale.set(10000, 10000, 10000);
-        floor.position.y = 0;
-        floor.receiveShadow = true;
-
-        scene.add(floor);
-    }
-
-    function initDroneModel(scene) {
-        var loader = new THREE.OBJLoader();
-        loader.addEventListener('load', function (event) {
-            droneObject = event.content;
-
-            droneObject.position.y = 1000;
-            droneObject.scale.set(0.01, 0.01, 0.01);
-
-            droneObject.castShadow = true;
-            droneObject.receiveShadow = true;
-
-            console.log(droneObject);
-            scene.add(droneObject);
-        });
-
-        loader.load('ardrone2.obj');
-    }
 
 
-    // update camera and viewport on resize
-    function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
 
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    }
 
-    function animate() {
-        requestAnimationFrame(animate);
+    nodecopterWebGL.droneModelURL = "ARDrone.js";
 
-        renderScene();
-        updateStateDisplays();
-    }
+    nodecopterWebGL.init(containerEl);
 
-    var deg2Rad = (function() {
-        var RAD_PER_DEG = Math.PI/180;
-
-        return function(deg) { return deg * RAD_PER_DEG; }
-    } ());
-
-    function renderScene() {
-        if(navData) {
-            var xr = deg2Rad(navData.frontBackDegrees),
-                yr = deg2Rad(navData.clockwiseDegrees),
-                zr = deg2Rad(navData.leftRightDegrees);
-
-            droneObject.rotation.set( xr, -yr, -zr);
-        }
-
-        camera.lookAt(scene.position);
-        renderer.render(scene, camera);
-    }
-
-    function updateStateDisplays() {
+    nodecopterWebGL.onRender = function () {
         if(!navData) { return; }
         droneStateEl.innerHTML = JSON.stringify(navData, null, 2);
 
@@ -218,50 +322,10 @@
             lastBatteryPercentage = navData.batteryPercentage;
             batteryMeterEl.innerHTML = lastBatteryPercentage;
         }
-    }
-
-
-
-
-    // ---- keyboard controls – kinda broken
-    var keymap = {
-        87 : { ev: 'move', param: 'front' }, // 'W'
-        83 : { ev: 'move', param: 'back' }, // 'S'
-        65 : { ev: 'move', param: 'left' }, // 'A'
-        68 : { ev: 'move', param: 'right' }, // 'D'
-        38 : { ev: 'move', param: 'up' }, // up
-        40 : { ev: 'move', param: 'down' }, // down
-        37 : { ev: 'move', param: 'counterClockwise' }, // left
-        39 : { ev: 'move', param: 'clockwise' }, // right
-        32 : { ev: 'drone', param: 'takeoff' }, // space
-        27 : { ev: 'drone', param: 'land' },  // esc
-        49 : { ev: 'animate', param: 'flipAhead', duration: 15 }, // 1
-        50 : { ev: 'animate', param: 'flipLeft', duration: 15 }, // 2
-        51 : { ev: 'animate', param: 'yawShake', duration: 15 }, // 3
-        52 : { ev: 'animate', param: 'doublePhiThetaMixed', duration: 15 }, // 4
-        53 : { ev: 'animate', param: 'wave', duration: 15 } // 5
     };
 
-    var speed = 0;
-    document.addEventListener("keydown", function (ev) {
-        if(!keymap[ev.keyCode]) {
-            //console.error('unmapped keycode', ev.keycode);
-            return;
-        }
 
-        ev.preventDefault();
 
-        speed = speed >= 1 ? 1 : speed + 0.08 / (1 - speed);
-
-        var evData = keymap[ev.keyCode];
-        //console.log('event', evData);
-        socket.emit(evData.ev, { action: evData.param, speed: speed, duration: evData.duration });
-    }, false);
-
-    document.addEventListener("keyup", function (ev) {
-        speed = 0;
-        socket.emit('droneObject', { action: 'stop' });
-    }, false);
 
 
     // ---- gamepad integration
@@ -281,7 +345,7 @@
 
     var AXES = {
         LEFT_ANALOGUE_HOR: 0, LEFT_ANALOGUE_VERT: 1,
-        RIGHT_ANALOGUE_HOR: 2, RIGHT_ANALOGUE_VERT: 3
+        RIGHT_ANALOGUE_HOR: 3, RIGHT_ANALOGUE_VERT: 4
     };
 
     // might be incomplete…
@@ -299,7 +363,8 @@
 
     // initialize
     var lastGamepadState = {
-        horiz: 0, vert: 0,
+        lefthoriz: 0, leftvert: 0,
+        righthoriz: 0, rightvert: 0,
         btnStart: 0, btnStop: 0,
         btnTurnCW: 0, btnTurnCCW: 0,
         btnUp: 0, btnDown: 0
@@ -317,14 +382,16 @@
         // I suspect the js-engine will likely do it anyway.
         var gamepadState = {
             // toFixed(1) to prevent too many useless nav-packets
-            horiz: gamepad.axes[AXES.LEFT_ANALOGUE_HOR].toFixed(1),
-            vert: gamepad.axes[AXES.LEFT_ANALOGUE_VERT].toFixed(1),
+            lefthoriz: gamepad.axes[AXES.LEFT_ANALOGUE_HOR].toFixed(1),
+            leftvert: gamepad.axes[AXES.LEFT_ANALOGUE_VERT].toFixed(1),
+            righthoriz: gamepad.axes[AXES.RIGHT_ANALOGUE_HOR].toFixed(1),
+            rightvert: gamepad.axes[AXES.RIGHT_ANALOGUE_VERT].toFixed(1),
 
             btnStart: (1==gamepad.buttons[BTN.START]),
             btnStop: (1==gamepad.buttons[BTN.SELECT]),
             btnTurnCW: (1==gamepad.buttons[BTN.RIGHT_SHOULDER]),
             btnTurnCCW: (1==gamepad.buttons[BTN.LEFT_SHOULDER]),
-            btnDown: (1==gamepad.buttons[BTN.FACE_1]),
+            btnFlipLeft: (1==gamepad.buttons[BTN.FACE_1]),
             btnUp: (1==gamepad.buttons[BTN.FACE_4]),
 
             btnFlipFwd: (1==gamepad.buttons[BTN.PAD_TOP]),
@@ -336,29 +403,55 @@
         // ---- logging
         gamepadStateEl.innerHTML = JSON.stringify(gamepadState, null, 2);
 
-        // ---- analogue-stick left/right
-        var horiz=gamepadState.horiz;
-        if(horiz != lastGamepadState.horiz) { // negative: left
-            if(horiz<0) {
-                socket.emit('move', { action: 'left', speed: -horiz });
-            } else if(horiz>0) {
-                socket.emit('move', { action: 'right', speed: horiz });
+        // ---- left analogue-stick left/right
+        var lefthoriz=gamepadState.lefthoriz;
+        if(lefthoriz != lastGamepadState.lefthoriz) { // negative: left
+            if(lefthoriz<0) {
+                socket.emit('move', { action: 'left', speed: -lefthoriz });
+            } else if(lefthoriz>0) {
+                socket.emit('move', { action: 'right', speed: lefthoriz });
             } else { // == 0
                 socket.emit('move', { action: 'left', speed: 0 });
                 socket.emit('move', { action: 'right', speed: 0 });
             }
         }
 
-        // ---- analogue-stick up/down
-        var vert=gamepadState.vert;
-        if(vert != lastGamepadState.vert) { // negative: up
-            if(vert<0) {
-                socket.emit('move', { action: 'front', speed: -vert });
-            } else if(vert>0) {
-                socket.emit('move', { action: 'back', speed: vert });
+        // ---- left analogue-stick up/down
+        var leftvert=gamepadState.leftvert;
+        if(leftvert != lastGamepadState.leftvert) { // negative: up
+            if(leftvert<0) {
+                socket.emit('move', { action: 'front', speed: -leftvert });
+            } else if(leftvert>0) {
+                socket.emit('move', { action: 'back', speed: leftvert });
             } else { // == 0
                 socket.emit('move', { action: 'front', speed: 0 });
                 socket.emit('move', { action: 'back', speed: 0 });
+            }
+        }
+
+        // ---- right analogue-stick left/right
+        var righthoriz=gamepadState.righthoriz;
+        if(righthoriz != lastGamepadState.righthoriz) { // negative: left
+            if(righthoriz<0) {
+                socket.emit('move', { action: 'counterClockwise', speed: -righthoriz });
+            } else if(righthoriz>0) {
+                socket.emit('move', { action: 'clockwise', speed: righthoriz });
+            } else { // == 0
+                socket.emit('move', { action: 'counterClockwise', speed: 0 });
+                socket.emit('move', { action: 'clockwise', speed: 0 });
+            }
+        }
+
+        // ---- right analogue-stick up/down
+        var rightvert=gamepadState.rightvert;
+        if(rightvert != lastGamepadState.rightvert) { // negative: up
+            if(rightvert<0) {
+                socket.emit('move', { action: 'up', speed: -rightvert });
+            } else if(rightvert>0) {
+                socket.emit('move', { action: 'down', speed: rightvert });
+            } else { // == 0
+                socket.emit('move', { action: 'up', speed: 0 });
+                socket.emit('move', { action: 'down', speed: 0 });
             }
         }
 
