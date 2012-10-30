@@ -262,6 +262,8 @@
                             zr = this.deg2Rad(this.navData.leftRightDegrees);
                         this.drone.rotation.set(xr, -yr, -zr);
                         this.drone.position.y = this.navData.altitudeMeters * 10;
+                        this.drone.position.x += this.navData.xVelocity / 60;
+                        this.drone.position.z += this.navData.yVelocity / 60;
                     }
 
                     if (typeof this.onRender === "function") {
