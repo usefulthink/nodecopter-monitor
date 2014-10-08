@@ -1,8 +1,35 @@
+* { margin: 0; padding: 0; }
+
 body {
-  padding: 50px;
-  font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+  font-family: monospace;
+  background-color: #000;
+  color: #fff;
+  margin: 0;
+  overflow: hidden;
 }
 
-a {
-  color: #00B7FF;
+#camImage {
+  position: absolute;
+  top: 0; right: 0;
+  width: 400px;
+  height: auto;
+
+  opacity: 0.9;
+}
+
+#battery {
+  position: absolute;
+  top: 0; left: 0;
+  font-size: 26px;
+}
+
+#droneStateData {
+  color: white;
+  font-size: 10px;
+  position: absolute;
+  bottom: 0; right: 0;
+
+  width: 300px; height: 200px;
+
+  background: rgba(0,0,0,0.5);
 }

@@ -1,137 +1,247 @@
-(function(global) {
+var win = window;
 
-    var doc = global.document,
-        $ = doc.getElementById.bind(doc),
-        query = function (selector, scope) { return (scope || doc).querySelectorAll(); };
+var nodecopterWebGL = {
+    /**
+     * Expose these objects for debugging purposes
+     * (to easily change positions, rotations, etc).
+     */
+    camera: null,
+    scene: null,
+    renderer: null,
+    floor: null,
+    drone: null,
+    ambientLight: null,
+    spotLight: null,
+    directionalLight: null,
 
-    var VENDOR_PREFIX=(function () {
-        var r = /^(Moz|Webkit|Khtml|O|ms|Icab)(?=[A-Z])/,
-            s = document.getElementsByTagName('script')[0].style;
+    droneModelURL: "",
+    navData: null,
 
-        for(var p in s) { if(r.test(p)) { return p.match(r)[0]; } }
+    /**
+     * Helper function to convert angle degrees to radians.
+     * @function
+     * @param  {number} The angle in degrees.
+     * @return {number} The angle in radians.
+     */
+    deg2Rad: (function () {
+        var RAD_PER_DEG = Math.PI / 180;
+        return function (deg) {
+            return deg * RAD_PER_DEG;
+        };
+    }()),
 
-        if('WebkitOpacity' in s) return 'Webkit';
-        if('KhtmlOpacity' in s) return 'Khtml';
 
-        return '';
-    } ());
-    (function __rafPolyfillInit() {
-        var lastTime = 0;
-        var vendors = ['ms', 'moz', 'webkit', 'o'];
-        for(var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
-            window.requestAnimationFrame = window[vendors[x]+'RequestAnimationFrame'];
-            window.cancelAnimationFrame = window[vendors[x]+'CancelAnimationFrame']
-                || window[vendors[x]+'CancelRequestAnimationFrame'];
+    init: function (container) {
+        this.width = win.innerWidth;
+        this.height = win.innerHeight;
+
+        win.addEventListener("resize", this.setSize.bind(this), false);
+
+        // Initialize everything.
+        this.scene = this.initThreeJS(container);
+        this.initFloorModel(this.scene);
+        this.initLightning(this.scene);
+
+        // Start rendering the scene once the drone model is loaded
+        this.initDroneModel(this.scene, function () {
+            this.render();
+        }.bind(this));
+    },
+
+    /**
+     * Resets the camera aspect ratio and the renderer size.
+     * To be called whenever the display size changes.
+     * @param {number} width  The new display width.
+     * @param {number} height The new display height.
+     */
+    setSize: function (width, height) {
+        this.width = typeof width === "number" ? width : win.innerWidth;
+        this.height = typeof height === "number" ? width : win.innerHeight;
+
+        this.camera.aspect = this.width / this.height;
+        this.camera.updateProjectionMatrix();
+
+        this.renderer.setSize(this.width, this.height);
+    },
+
+    /**
+     * Sets the demo navdata from the drone so the webGL drone can move.
+     * @param {object} navData The navdata.demo data from the drone.
+     */
+    setNavData: function (navData) {
+        this.navData = navData;
+    },
+
+    /**
+     * Initializes the camera, renderer and scene and attaches
+     * the canvas to the provided DOM node.
+     */
+    initThreeJS: function (container) {
+        this.camera = new THREE.PerspectiveCamera(50, this.width / this.height, 0.1, 8000);
+        this.camera.position.set(0, 200, 300);
+
+        this.renderer = new THREE.WebGLRenderer({antialias: true});
+        this.renderer.setSize(this.width, this.height);
+        this.renderer.shadowMapEnabled = true;
+
+        container.appendChild(this.renderer.domElement);
+
+        return new THREE.Scene();
+    },
+
+    /**
+     * Initializes the floor model.
+     * @param  {object} scene The THREE.js scene object.
+     */
+    initFloorModel: function (scene) {
+        /*
+         var planeGeo = new THREE.PlaneGeometry(1200, 2000, 1, 1);
+         var planeMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+         this.floor = new THREE.Mesh(planeGeo, planeMat);
+         this.floor.rotation.x = -Math.PI/2;
+         this.floor.receiveShadow = true;
+         scene.add(this.floor);
+         */
+
+        var floorTileCanvas = document.createElement("canvas"),
+            context = floorTileCanvas.getContext("2d");
+
+        floorTileCanvas.width = floorTileCanvas.height = 512;
+        context.fillStyle = "#aac";
+        context.fillRect(0, 0, 512, 512);
+        context.fillStyle = "#ccf";
+
+        context.fillRect(0, 0, 256, 256);
+        context.fillRect(256, 256, 256, 256);
+
+        var floorTexture = new THREE.Texture(floorTileCanvas, THREE.UVMapping, THREE.RepeatWrapping, THREE.RepeatWrapping),
+            floorMaterial = new THREE.MeshLambertMaterial({map: floorTexture});
+
+        floorTexture.needsUpdate = true;
+        floorTexture.repeat.set(5000, 5000);
+
+        var geometry = new THREE.PlaneGeometry(100, 100);
+
+        this.floor = new THREE.Mesh(geometry, floorMaterial);
+
+        this.floor.rotation.x = -Math.PI / 2;
+        this.floor.scale.set(10000, 10000, 10000);
+        this.floor.receiveShadow = true;
+
+        scene.add(this.floor);
+    },
+
+    /**
+     * Loads and initializes the drone model.
+     * @param  {object}   scene    The THREE.js scene object.
+     * @param  {function} callback A callback function to be called when the model is loaded.
+     */
+    initDroneModel: function (scene, callback) {
+        new THREE.JSONLoader().load(this.droneModelURL, function (geometry) {
+            var material = new THREE.MeshFaceMaterial();
+            this.drone = new THREE.Mesh(geometry, material);
+            this.drone.scale.set(0.8, 0.8, 0.8);
+            this.drone.castShadow = true;
+            scene.add(this.drone);
+
+            callback();
+        }.bind(this));
+    },
+
+    /**
+     * Initializes three different lights.
+     */
+    initLightning: function (scene) {
+        this.ambientLight = new THREE.AmbientLight(0x404030);
+        scene.add(this.ambientLight);
+
+        this.spotLight = new THREE.SpotLight(0xffeedd);
+        this.spotLight.position.set(0, 1000, 0);
+        this.spotLight.castShadow = true;
+        this.spotLight.shadowDarkness = 0.7;
+
+        // this.spotLight.shadowCameraVisible = true;
+
+        scene.add(this.spotLight);
+
+        this.directionalLight = new THREE.DirectionalLight(0xffeedd);
+        this.directionalLight.position.set(0, 1000, 1000);
+        // this.directionalLight.castShadow = true; // Works only with orthographic camera.
+        scene.add(this.directionalLight);
+    },
+
+    /**
+     * Renders the scene and calls itself via requestAnimationFrame.
+     */
+    render: function () {
+        requestAnimationFrame(this.render.bind(this));
+
+        if (this.navData) {
+            var roll = this.deg2Rad(this.navData.rotation.leftRight),
+                yaw = -this.deg2Rad(this.navData.rotation.clockwise),
+                pitch = -this.deg2Rad(this.navData.rotation.frontBack);
+
+            this.drone.eulerOrder = 'YZX';
+            this.drone.rotation.set(pitch, yaw, roll);
+            this.drone.position.y = 10 + this.navData.altitudeMeters * 100;
+
+            //this.drone.position.x += this.navData.xVelocity / 60;
+            //this.drone.position.z += this.navData.yVelocity / 60;
         }
 
-        if (!window.requestAnimationFrame)
-            window.requestAnimationFrame = function(callback, element) {
-                var currTime = new Date().getTime();
-                var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-                var id = window.setTimeout(function() { callback(currTime + timeToCall); },
-                    timeToCall);
-                lastTime = currTime + timeToCall;
-                return id;
-            };
-
-        if (!window.cancelAnimationFrame)
-            window.cancelAnimationFrame = function(id) {
-                clearTimeout(id);
-            };
-    }());
-
-
-    var socket = io.connect('http://localhost:3001'),
-        valueDisplay = document.getElementById('display');
-
-    var lastNavdata = null;
-    socket.on('navdata', function (data) {
-        valueDisplay.innerText = JSON.stringify(data, null, 2);
-
-        lastNavdata = data.demo;
-    });
-
-    var camImg = document.getElementById('cam');
-    socket.on('image', function(src) {
-        console.log('received an image…');
-        cam.src=src;
-    });
-
-
-    var drone = {
-        keydown: function (e) {
-            e.preventDefault();
-            switch (e.keyCode) {
-                case 87: // W
-                    socket.emit("move", "front");
-                break;
-                case 83: // S
-                    socket.emit("move", "back");
-                break;
-                case 65: // A
-                    socket.emit("move", "left");
-                break;
-                case 68: // D
-                    socket.emit("move", "right");
-                break;
-                case 38: // arrow up
-                    socket.emit("move", "up");
-                break;
-                case 40: // arrow down
-                    socket.emit("move", "down");
-                break;
-                case 37: // arrow left
-                    socket.emit("rotate", "counterclockwise");
-                break;
-                case 39: // arrow right
-                    socket.emit("rotate", "clockwise");
-                break;
-                case 32: // spacebar
-                    socket.emit("drone", "takeoff");
-                break;
-                case 27: // esc
-                    socket.emit("drone", "land");
-                break;
-            }
-        },
-        mousemove: function (e) {
-            var movementX = e.webkitMovementX;
-            socket.emit("rotate", movementX);
+        if (typeof this.onRender === "function") {
+            this.onRender.call(this);
         }
+
+        this.camera.lookAt(this.drone.position);
+        this.renderer.render(this.scene, this.camera);
+    }
+};
+
+
+var $ = document.getElementById.bind(document);
+
+var batteryMeterEl = $('batteryMeter'),
+    droneStateEl = $('droneStateData'),
+    imgEl = $('camImage'),
+    containerEl = $('nodecopter-webgl');
+
+var navData = null, droneState = null,
+    lastBatteryPercentage = 100;
+
+var socket = io.connect('http://localhost:3001');
+
+socket.on('navdata', function (data) {
+    droneState = data.droneState;
+    navData = data;
+    nodecopterWebGL.setNavData(navData);
+});
+
+var isImageLoading = false;
+socket.on('image', function(src) {
+    if(isImageLoading) { return; }
+
+    var tmpImg = new Image();
+    tmpImg.src = src;
+    tmpImg.onload = function() {
+        isImageLoading = false;
+        imgEl.src = src;
     };
+    isImageLoading = true;
+});
 
-    $("mouselock").addEventListener("click", function () {
-        $("rotor").webkitRequestPointerLock();
-    }, false);
 
-    doc.addEventListener("keydown", drone.keydown, false);
-    doc.addEventListener("mousemove", drone.mousemove, false);
+// initialize webgl-stuff
+nodecopterWebGL.droneModelURL = "model/ARDrone.three.json";
+nodecopterWebGL.init(containerEl);
 
-         /*
-            "controlState":"CTRL_LANDED",
-            "flyState":"FLYING_OK",
-            "batteryPercentage":20,
-            "frontBackDegrees":11.155,
-            "leftRightDegrees":0.905,
-            "clockwiseDegrees":43.913,
-            "altitudeMeters":0,
-            "xVelocity":0,
-            "yVelocity":0,
-            "zVelocity":0,
-            "frameIndex":0
-        */
+nodecopterWebGL.onRender = function () {
+    if(!navData) { return; }
 
-    var el = document.getElementById('rotor'),
-        s = el.style;
+    droneStateEl.innerHTML = JSON.stringify(navData, null, 2);
 
-    global.onload = function __mainStartup() {
-        (function __mainloop(t){
-            requestAnimationFrame(__mainloop);
-
-            if(!lastNavdata) { return; }
-            s.WebkitTransform = 'rotateX(' + (45-lastNavdata.frontBackDegrees) + 'deg)'
-                + ' rotateY(' + lastNavdata.leftRightDegrees + 'deg)'
-                + ' rotateZ(' + lastNavdata.clockwiseDegrees + 'deg)'
-        } ());
-    };
-} (this));
+    if (navData.batteryPercentage !== lastBatteryPercentage) {
+        lastBatteryPercentage = navData.batteryPercentage;
+        batteryMeterEl.innerHTML = lastBatteryPercentage;
+    }
+};
